@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta http-equiv="X-UA-Compatible" content="ie=edge">
+		<title>Earthquake Intensity Map</title> <!-- Webpage title -->
+		<!-- Leaflet CSS for map styling -->
+		<link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css"
+			integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ=="
+			crossorigin="" />
+		<style>
+			body {
+				padding: 0;
+				margin: 0;
+			}
+
+			#map,
+			body,
+			html {
+				height: 100%;
+			}
+
+			.legend {
+				background: white;
+				padding: 10px;
+				box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+				border-radius: 5px;
+			}
+
+			.legend h4 {
+				margin: 0 0 10px;
+			}
+
+			/* Title margin for the legend */
+			.info {
+				padding: 6px 8px;
+			}
+
+			.info h4 {
+				margin: 0 0 5px;
+				color: #777;
+			}
+		</style>
+		<!-- ECharts JavaScript for charts -->
+		<script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+	</head>
+	<body>
+		<div id="map"></div> <!-- Map container -->
+		<!-- Leaflet JS for map functionality -->
+		<script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"
+			integrity="sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew=="
+			crossorigin=""></script>
+		<!-- D3 JavaScript for data manipulation -->
+		<script src="https://d3js.org/d3.v5.min.js"></script>
+		<script>
+			const API_KEY =
+			"pk.eyJ1IjoiZ29yZGVuLWxlZSIsImEiOiJjbHQ1eDdxaWcwNWxxMmpwZGRyZTAzaHlxIn0.LXeoPI0OYkZFy0vwmyLyYQ"; // Mapbox access token
+			var myMap = L.map("map", {
+				center: [37.09, -122.4194], // Map initial center
+				zoom: 5 // Initial zoom level
+			});
+
+			// Adding tile layer to the map using Mapbox style and access token
+			L.tileLayer(
+				'https://api.mapbox.com/styles/v1/gorden-lee/cltajk0ve015p01pi7ps4emtg/tiles/{z}/{x}/{y}?access_token={accessToken}', {
+					attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+					maxZoom: 18,
+					tileSize: 512,
+					zoomOffset: -1,
+					accessToken: API_KEY
+				}).addTo(myMap);
+
+			// Earthquake data endpoint
+			var earthquakeData = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson";
+
+			// Function to update earthquake data
+			function updateEarthquakeData() {
+				d3.json(earthquakeData).then(function(data) {
+					// Adding GeoJSON layer to the map
+					L.geoJson(data, {
+						pointToLayer: function(feature, latlng) {
+							// Returning a circle marker for each feature in the GeoJSON
+							return L.circleMarker(latlng, {
+								radius: feature.properties.mag * 4
+							});
+						},
+						style: function(feature) {
+							// Color based on earthquake magnitude
+							return {
+								color: getColor(feature.properties.mag)
+							};
+						},
+						onEachFeature: function(feature, layer) {
+							// Binding click event to each feature
+							layer.on('click', function() {
+								// Fly to the feature on click
+								myMap.flyTo(layer.getLatLng(), 8, {
+									animate: true,
+									duration: 1.5 // in seconds
+								});
+
+								// Popup content for each feature
+								var dateTime = new Date(feature.properties.time);
+								var popupContent =
+									`<h3>Location: ${feature.properties.place}</h3><hr><p>Date: ${dateTime}</p><p>Magnitude: ${feature.properties.mag}</p><div id="chart" style="width: 400px;height:300px;"></div>`;
+
+								// Bind popup to layer
+								layer.bindPopup(popupContent, {
+									maxWidth: 400
+								}).openPopup();
+							});
+						}
+					}).addTo(myMap);
+				});
+			}
+
+			// Function to get color based on magnitude
+			function getColor(magnitude) {
+				return magnitude > 5 ? '#d73027' :
+					magnitude > 4 ? '#fc8d59' :
+					magnitude > 3 ? '#fee08b' :
+					magnitude > 2 ? '#d9ef8b' :
+					magnitude > 1 ? '#91cf60' :
+					'#1a9850';
+			}
+
+			// Event when popup opens to generate ECharts
+			myMap.on('popupopen', function(e) {
+				var chartDom = document.getElementById('chart');
+				if (chartDom) { // Ensure the chart container is available
+					var myChart = echarts.init(chartDom);
+					var option = {
+						xAxis: {
+							type: 'category',
+							data: ['Magnitude']
+						},
+						yAxis: {
+							type: 'value'
+						},
+						series: [{
+							data: [e.popup._source.feature.properties.mag],
+							type: 'bar',
+							label: {
+								show: true,
+								position: 'top'
+							}
+						}]
+					};
+					myChart.setOption(option);
+				}
+			});
+
+			// Add legend to the map
+			var legend = L.control({
+				position: 'bottomleft'
+			});
+			legend.onAdd = function(map) {
+				var div = L.DomUtil.create('div', 'info legend');
+				div.innerHTML = '<h4>Earthquake Magnitude</h4>';
+				var grades = [0, 1, 2, 3, 4, 5];
+				var labels = ['<strong>Magnitude</strong>']; // Legend title
+
+				// Loop through our magnitude intervals and generate a label with a colored square for each interval
+				for (var i = 0; i < grades.length; i++) {
+					div.innerHTML +=
+						'<i style="background:' + getColor(grades[i] + 1) + '">&nbsp;&nbsp;&nbsp;</i> ' +
+						grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] : '+') + '<br>';
+				}
+
+				return div;
+			};
+
+			legend.addTo(myMap);
+
+			// Initial data update
+			updateEarthquakeData();
+			// Set interval for updating earthquake data every 10 minutes
+			setInterval(updateEarthquakeData, 600000);
+		</script>
+	</body>
+</html>
